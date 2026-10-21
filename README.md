@@ -1,113 +1,85 @@
-# ⛓️ Chained Teams
+# Chained Teams
 
-**Race your friends up the tower in Chained Together.**
-Two teams of 3, two chains, one lobby, plus live split times so you can see who's really winning.
+A mod for Chained Together: two teams of 3 race up the tower in one lobby, with live split times for each team.
 
-> 🔒 Made for private lobbies with friends. No leaderboards, no public matchmaking.
+Made for private lobbies with friends. No leaderboards, no public matchmaking.
 
----
+## Install
 
-## 🚀 Get playing in 3 steps
+1. Download `ChainedTeams-vX.zip` from [Releases](../../releases/latest).
+2. Unzip it anywhere.
+3. Double-click `ChainedTeams.exe`. The game starts with the mod on. Join your friend's lobby as usual.
 
-**1. Download**
-Go to [**Releases**](../../releases/latest) and download **`ChainedTeams-vX.zip`**.
+To play without the mod, launch Chained Together from Steam as normal. Nothing in your game folder is changed.
 
-**2. Unzip**
-Right-click the zip → **Extract All** → put the folder anywhere (your Desktop is fine).
+If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
 
-**3. Play**
-Open the folder and double-click **`ChainedTeams.exe`**. The game starts with the mod on.
-Then join your friend's lobby like you normally would.
+## Features
 
-That's it! 🎉
+- **3v3 races:** Team Red vs Team Blue in one lobby, up to 6 players.
+- **Separate chains:** each team is chained only to its own players, and the teams pass through each other.
+- **Live splits:** a time for each team at every section of the map, shown in the chat box.
+- **First to the top wins:** both teams' split times are shown at the end.
+- **Rematch:** return to the lobby without anyone rejoining.
+- **Practice mode:** save positions and teleport back to them, with 1 to 3 players.
+- **Update-safe:** if the game updates, the mod turns itself off instead of breaking the game.
 
-<details>
-<summary>😬 Windows says "Windows protected your PC"</summary>
+## Chat commands
 
-That's normal for small homemade tools. Click **More info** → **Run anyway**.
-If your antivirus complains, allow `ChainedTeams.exe`. All it does is switch the mod on while the game is running.
-</details>
+Press **T** to open chat.
 
-<details>
-<summary>🎮 I want to play the normal game</summary>
+**Race**
 
-Just launch Chained Together from Steam like you always do. The mod only runs when you start it with `ChainedTeams.exe`. Nothing in your game folder is changed.
-</details>
-
----
-
-## ✨ What you get
-
-- 🏁 **3v3 races.** Team Red vs Team Blue in one lobby.
-- ⛓️ **Your own chain.** Each team is chained only to its own players, and you pass right through the other team.
-- ⏱️ **Live splits.** Every section of the map (The underworld → … → The Final Trials) gets a time for each team, shown in the chat box on the left.
-- 🏆 **First to the top wins.** Everyone sees both teams' times at the end.
-- 🔁 **Instant rematch.** Back to the lobby without anyone rejoining.
-- 🧗 **Practice mode.** Save your spot, mark tricky jumps, and teleport back to them. Works with 1 to 3 players.
-- 🛡️ **Update-safe.** If the game updates and the mod isn't ready yet, it switches itself off instead of breaking your game.
-
----
-
-## 💬 Chat commands
-
-Press **T** to open chat and type a command.
-
-**🏁 During a race**
-| Command | What it does |
+| Command | Description |
 |---|---|
-| `!help` | Shows all commands |
+| `!help` | List all commands |
 | `!time` | Current race time |
-| `!splits` | Both teams' times so far |
-| `!team red` / `!team blue` | Switch teams |
-| `!spectate` | Watch the other team (`!me` to come back) |
+| `!splits` | Both teams' split times |
+| `!team red` / `!team blue` | Switch team |
+| `!spectate` / `!me` | Watch the other team / return to your own view |
 
-**🧗 Practice** (only when a race isn't running)
-| Command | What it does |
+**Practice** (not available during a race)
+
+| Command | Description |
 |---|---|
-| `!save` / `!load` | Save your team's spot and jump back to it |
-| `!mark jump1` | Remember this spot as "jump1" |
-| `!tp jump1` | Teleport your team to "jump1" |
-| `!skips` | List your saved spots |
+| `!save` / `!load` | Save your team's position / return to it |
+| `!mark <name>` | Save the current position under a name |
+| `!tp <name>` | Teleport your team to a saved position |
+| `!skips` | List saved positions |
 | `!top` | Teleport to the top |
 
-**👑 Host only**
-| Command | What it does |
+**Host only**
+
+| Command | Description |
 |---|---|
-| `!balance` | Splits everyone into even teams |
-| `!rematch` | Back to the lobby for another round |
-| `!start` / `!reset` | Start or reset the clock by hand |
+| `!balance` | Split players into even teams |
+| `!rematch` | Return everyone to the lobby |
+| `!start` / `!reset` | Start or reset the clock manually |
 
----
+## Hosting
 
-## 👑 Hosting a race
+See the [Host guide](docs/HOST_GUIDE.md).
 
-See the **[Host guide](docs/HOST_GUIDE.md)**. It's short, promise.
+## Status (v0.4)
 
----
+- **Working:** splits, practice mode, the launcher, and a full 6-player race (teams, chains, timer, winner, rematch).
+- **Not yet tested with real players online:** players 5 and 6 joining through Steam, and spectating.
 
-## 📋 Status (v0.4)
+Report bugs in [Issues](../../issues).
 
-- ✅ **Working:** splits, practice mode, the launcher, and a full 6-player race (teams, chains, timer, winner, rematch).
-- 🔜 **Still to try with real friends online:** players 5 and 6 joining through Steam, and spectating.
-
-Found a bug? [Open an issue](../../issues) and say what happened.
-
----
-
-<details>
-<summary>🛠️ For tinkerers: building it yourself</summary>
+## Building from source
 
 ```powershell
 .\tools\build-release.ps1
 ```
-This downloads UE4SS, builds the launcher and creates `release\ChainedTeams-v<version>.zip`.
 
-| Folder | What's inside |
+This downloads UE4SS, builds the launcher and writes `release\ChainedTeams-v<version>.zip`.
+
+| Folder | Contents |
 |---|---|
-| `mod/` | The mod itself |
+| `mod/` | The mod |
 | `launcher/` | Source for `ChainedTeams.exe` |
-| `docs/` | Player and host guides (`docs/dev/` has the technical notes) |
-| `tools/` | The build script |
+| `docs/` | Player and host guides; `docs/dev/` has technical notes |
+| `tools/` | Build script |
 
 Uses [RE-UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) (MIT). Contains no game files.
-</details>

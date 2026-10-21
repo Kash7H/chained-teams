@@ -1,32 +1,20 @@
-﻿# ⛓️ Chained Teams: how to play
+﻿# Chained Teams: How to Play
 
-## 🚀 3 steps
+1. Unzip this folder anywhere.
+2. Double-click `ChainedTeams.exe` and wait for the game to open.
+3. Join your friend's lobby as usual.
 
-**1.** Unzip this folder anywhere (your Desktop is fine).
-
-**2.** Double-click **`ChainedTeams.exe`** and wait for the game to open.
-
-**3.** Join your friend's lobby like you normally would.
-
-Done! 🎉
-
----
-
-## 💬 Handy commands
+## Commands
 
 Press **T** to chat, then type:
 
-- `!help` shows everything
-- `!team red` or `!team blue` picks your team
-- `!splits` shows both teams' times
-- `!spectate` watches the other team (`!me` to come back)
+- `!help`: list all commands
+- `!team red` or `!team blue`: pick your team
+- `!splits`: show both teams' times
+- `!spectate`: watch the other team (`!me` to return)
 
----
+## Help
 
-## ❓ Quick help
+**"Windows protected your PC"**: click **More info**, then **Run anyway**.
 
-**Windows says "Windows protected your PC"?**
-Click **More info** → **Run anyway**. It's safe. It only switches the mod on while the game runs.
-
-**Want the normal game?**
-Launch Chained Together from Steam like always. Nothing in your game is changed.
+**Playing without the mod**: launch Chained Together from Steam as normal. Nothing in your game is changed.
