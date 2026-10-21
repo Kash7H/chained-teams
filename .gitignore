@@ -1,0 +1,7 @@
+_private/
+release/
+launcher/ue4ss/
+launcher/ChainedTeams.exe
+mod/ChainedTeams/data/
+*.log
+*.zip
