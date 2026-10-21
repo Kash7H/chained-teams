@@ -3,7 +3,7 @@
 -- Everything here runs on the HOST; clients can stay vanilla (they see results through the game's own chat).
 
 local CT = { devBots = false,  -- set true for solo bot testing (!bots, !play, devcmd_run.txt)
-    debug = false, VERSION = "0.4.0", SUPPORTED_GAME = { ["1.10.19"] = true } }
+    debug = false, VERSION = "0.4.1", SUPPORTED_GAME = { ["1.10.19"] = true } }
 local MAX_PLAYERS = 6
 local TAG = "Chained Teams"
 -- data folder next to Scripts/, derived from this file's path (works for proxy installs and launcher injection)
@@ -480,17 +480,56 @@ local function onCommand(pc, msg)
     elseif cmd == "top" then
         local e = FindFirstOf("BP_EndCinematic_C"); local l = valid(e) and e:K2_GetActorLocation() or { X = 67873, Y = -20317, Z = 368365 }
         tpTeamTo(team, l.X, l.Y, l.Z + 150, 0); say("teleported to the top")
-    else say("unknown command - !help") end
+    end  -- unknown commands are ignored (other mods may use them)
 end
 
-pcall(function()
-    RegisterHook("/Game/Blueprint/Gameplay/PC_Game.PC_Game_C:SendMessageSRV", function(ctx, msgp)
-        if not state.enabled then return end
-        local pc = ctx:get(); local ok, msg = pcall(function() return msgp:get():ToString() end)
-        if ok and msg and msg:sub(1, 1) == "!" then
-            ExecuteWithDelay(50, function() ExecuteInGameThread(function() onCommand(pc, msg) end) end)
+
+-- Chat poller: the SendMessageSRV hook does not fire for typed chat (it's an RPC). Instead read new entries
+-- from GS_Game.Tchat (array of S_TchatElement: Playername_2_..., Message_4_...) and match the sender by name.
+CT.chatSeen = nil
+local CHAT_FIELDS = { Playername = "Playername_2_61BD72644F6167A7C06BDEB30F4246AA", Message = "Message_4_8C914A0F473A572E93CAF580FB02CB0D" }
+local function fieldOf(el, prefix)
+    local val
+    pcall(function() val = el[CHAT_FIELDS[prefix]] end)
+    if val == nil then
+        pcall(function()
+            el:GetStruct():ForEachProperty(function(p)
+                local k = p:GetFName():ToString()
+                if k:sub(1, #prefix) == prefix then val = el[k] end
+            end)
+        end)
+    end
+    if val == nil then return nil end
+    local ok, s = pcall(function() return val:ToString() end)
+    return ok and s or tostring(val)
+end
+local function pcByName(name)
+    for _, pc in ipairs(FindAllOf("PC_Game_C") or {}) do
+        local ok, n = pcall(function() return pc.PlayerState:GetPlayerName():ToString() end)
+        if ok and n == name then return pc end
+    end
+end
+LoopAsync(300, function()
+    if not state.enabled or not isHost() then return false end
+    ExecuteInGameThread(function()
+        local gs = GS(); if not gs then CT.chatSeen = nil; return end
+        local okn, n = pcall(function() return gs.Tchat:GetArrayNum() end)
+        if not okn then return end
+        if CT.chatSeen == nil or n < CT.chatSeen then CT.chatSeen = n; return end
+        for i = CT.chatSeen + 1, n do
+            local el; pcall(function() el = gs.Tchat[i] end)
+            if el then
+                local who = fieldOf(el, "Playername") or ""
+                local msg = fieldOf(el, "Message") or ""
+                if msg:sub(1, 1) == "!" and who ~= TAG then
+                    local pc = pcByName(who) or FindFirstOf("PC_Game_C")
+                    onCommand(pc, msg)
+                end
+            end
         end
+        CT.chatSeen = n
     end)
+    return false
 end)
 
 -- ---------- section triggers ----------
