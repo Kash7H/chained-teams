@@ -6,3 +6,4 @@ mod/ChainedTeams/data/
 *.log
 *.zip
 personal/
+panel/ChainedTeamsPanel.exe

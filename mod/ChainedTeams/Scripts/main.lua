@@ -3,7 +3,7 @@
 -- Everything here runs on the HOST; clients can stay vanilla (they see results through the game's own chat).
 
 local CT = { devBots = false,  -- set true for solo bot testing (!bots, !play, devcmd_run.txt)
-    debug = false, VERSION = "0.4.1", SUPPORTED_GAME = { ["1.10.19"] = true } }
+    debug = false, VERSION = "0.5.0", SUPPORTED_GAME = { ["1.10.19"] = true } }
 local MAX_PLAYERS = 6
 local TAG = "Chained Teams"
 -- data folder next to Scripts/, derived from this file's path (works for proxy installs and launcher injection)
@@ -53,9 +53,13 @@ end
 local function say(msg, team)
     local gs = GS(); if not gs then return end
     local col = { R = 1, G = 0.85, B = 0.2, A = 1 }
-    if team == 0 then col = { R = 1, G = 0.25, B = 0.25, A = 1 } elseif team == 1 then col = { R = 0.3, G = 0.55, B = 1, A = 1 } end
+    -- team 0 = BLUE, team 1 = RED
+    if team == 0 then col = { R = 0.3, G = 0.55, B = 1, A = 1 } elseif team == 1 then col = { R = 1, G = 0.25, B = 0.25, A = 1 } end
     pcall(function() gs:SendToChatSRV(TAG, msg, col) end)
     log("chat: " .. msg)
+    CT.chatLog = CT.chatLog or {}
+    table.insert(CT.chatLog, msg)
+    while #CT.chatLog > 8 do table.remove(CT.chatLog, 1) end
 end
 local function chars()
     local out = {}
@@ -698,6 +702,23 @@ local function balanceTeams()
     say(string.format("teams balanced (%d players)", i))
 end
 CT.balanceTeams = balanceTeams
+
+-- ---------- fun controls, pushing, outfits, side panel (fun.lua) ----------
+do
+    local okf, funSetup = pcall(require, "fun")
+    if okf and type(funSetup) == "function" then
+        local okr, err = pcall(funSetup, {
+            CT = CT, state = state, TEAM_NAME = TEAM_NAME, DATA_DIR = DATA_DIR, TAG = TAG,
+            log = log, valid = valid, GS = GS, GI = GI, now = now, fmt = fmt, isHost = isHost, say = say,
+            chars = chars, teamOf = teamOf, z = z, pct = pct, isRace = isRace,
+            tpChar = tpChar, tpTeamTo = tpTeamTo, saveSkips = saveSkips,
+            onCommand = onCommand, balanceTeams = balanceTeams,
+        })
+        if not okr then log("fun.lua failed: " .. tostring(err)) end
+    else
+        log("fun.lua not loaded: " .. tostring(funSetup))
+    end
+end
 
 -- ---------- startup ----------
 LoopAsync(2000, function()

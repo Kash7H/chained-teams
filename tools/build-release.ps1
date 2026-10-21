@@ -29,6 +29,7 @@ $keep = Get-Content $mods | Where-Object { $_ -match "^(BPML_GenericFunctions|BP
 
 # launcher exe
 & (Join-Path $launcher "build.bat")
+& (Join-Path $root "panel\build.bat")
 
 # version from the mod
 $ver = ([regex]::Match((Get-Content (Join-Path $root "mod\ChainedTeams\Scripts\main.lua") -Raw), 'VERSION = "([^"]+)"')).Groups[1].Value
@@ -36,6 +37,7 @@ $stage = Join-Path $env:TEMP "ct-release\ChainedTeams"
 if (Test-Path (Split-Path $stage)) { Remove-Item (Split-Path $stage) -Recurse -Force }
 New-Item -ItemType Directory -Force $stage | Out-Null
 Copy-Item (Join-Path $launcher "ChainedTeams.exe") $stage
+Copy-Item (Join-Path $root "panel\ChainedTeamsPanel.exe") (Join-Path $stage "ChainedTeams Panel.exe")
 Copy-Item (Join-Path $root "docs\FRIEND_GUIDE.md") (Join-Path $stage "HOW TO PLAY.md")
 Copy-Item (Join-Path $root "docs\HOST_GUIDE.md") (Join-Path $stage "HOST GUIDE.md")
 Copy-Item $ue4ss $stage -Recurse
