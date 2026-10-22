@@ -32,6 +32,30 @@ local function log(s) print("[ChainedTeams] " .. tostring(s)) end
 
 -- ---------- helpers ----------
 local function valid(o) return o ~= nil and o:IsValid() end
+-- Hooks on game Blueprints only work once the game has loaded that Blueprint (often not until a level or
+-- menu opens). hookLater retries every second until the function exists, then registers the hook.
+local pendingHooks = {}
+function CT.hookLater(path, pre, post)
+    pendingHooks[#pendingHooks + 1] = { path = path, pre = pre, post = post }
+end
+LoopAsync(1000, function()
+    if #pendingHooks == 0 then return false end
+    ExecuteInGameThread(function()
+        for i = #pendingHooks, 1, -1 do
+            local h = pendingHooks[i]
+            local fn = StaticFindObject(h.path)
+            if fn ~= nil and fn:IsValid() then
+                local ok, err = pcall(function()
+                    if h.post then RegisterHook(h.path, h.pre, h.post) else RegisterHook(h.path, h.pre) end
+                end)
+                table.remove(pendingHooks, i)
+                log((ok and "hooked " or "hook failed ") .. h.path:match("[^:]+$") .. (ok and "" or (": " .. tostring(err))))
+            end
+        end
+    end)
+    return false
+end)
+
 local function GI() local a = FindFirstOf("CustomGI_C"); if valid(a) then return a end end
 local function GS() local a = FindFirstOf("GS_Game_C"); if valid(a) then return a end end
 local function now()
@@ -260,40 +284,101 @@ local function snapshot(team)
     return snap
 end
 
+local TP_LIFT = 60   -- land ~2 ft above the saved spot so we never end up inside the floor
+
+-- Place a character exactly. K2_TeleportTo "finds a free spot nearby" and slid players sideways,
+-- so set the location directly first and only fall back to the engine teleport if that didn't move us.
 local function tpChar(c, x, y, zz, yaw)
     local loc = { X = x, Y = y, Z = zz }; local rot = { Pitch = 0, Yaw = yaw or 0, Roll = 0 }
-    local function moved()
+    local function dist()
         local ok, l = pcall(function() return c:K2_GetActorLocation() end)
-        return ok and l and math.abs(l.X - x) + math.abs(l.Y - y) + math.abs(l.Z - zz) < 600
+        if not (ok and l) then return 1e9 end
+        return math.sqrt((l.X - x) ^ 2 + (l.Y - y) ^ 2 + (l.Z - zz) ^ 2)
     end
-    local methods = {
-        { "K2_TeleportTo", function() c:K2_TeleportTo(loc, rot) end },
-        { "K2_SetActorLocation", function() c:K2_SetActorLocation(loc, false, {}, true) end },
-        { "SetActorLocationAndRotation(UpdateTarget)", function() c["SetActorLocationAndRotation(UpdateTarget)"](c, loc, rot, false, true, {}) end },
-        { "RescueTeleport", function() c:RescueTeleport(loc, rot) end },
-    }
-    for _, m in ipairs(methods) do
-        local ok, err = pcall(m[2])
-        if moved() then if CT.tpMethod ~= m[1] then CT.tpMethod = m[1]; log("teleport works via " .. m[1]) end return true end
-        if not ok then log("tp " .. m[1] .. " failed: " .. tostring(err)) end
+    -- Like the game's BP_Teleporter: the character pulls itself toward its synced position
+    -- (ClientRepLocation/ServerRepLocation) and has a physics sphere + chain links, so move all of them.
+    local ZERO = { X = 0, Y = 0, Z = 0 }
+    pcall(function() c.IsTeleporting = true end)
+    pcall(function() c.CharacterMovement:StopMovementImmediately() end)
+    pcall(function() c:K2_SetActorLocation(loc, false, {}, true) end)
+    pcall(function() c:K2_SetActorRotation(rot, true) end)
+    pcall(function() c.ClientRepLocation = loc end)
+    pcall(function() c.ServerRepLocation = loc end)
+    pcall(function() c.ServerRepVelocity = ZERO end)
+    pcall(function()
+        local s = c.Sphere
+        if valid(s) then
+            s:K2_SetWorldLocation(loc, false, {}, true)
+            s:SetAllPhysicsLinearVelocity(ZERO, false)
+        end
+    end)
+    pcall(function()
+        local out = {}
+        c:GetConnectedChains(out)
+        if out.Chains then
+            out.Chains:ForEach(function(_, e)
+                local ch = e:get()
+                if valid(ch) then pcall(function()
+                    ch.Maillons_Array:ForEach(function(_, m)
+                        local link = m:get()
+                        if valid(link) then
+                            pcall(function() link:K2_SetWorldLocation(loc, false, {}, true) end)
+                            pcall(function() link:SetAllPhysicsLinearVelocity(ZERO, false) end)
+                        end
+                    end)
+                end) end
+            end)
+        end
+    end)
+    pcall(function() c.CharacterMovement.Velocity = ZERO end)
+    -- The character is physics driven and keeps its old momentum (it slid ~14 m after a teleport).
+    -- Pin it to the target for 0.6 s: re-place it and zero every velocity each 50 ms.
+    local function pin()
+        if not valid(c) then return end
+        pcall(function() c.CharacterMovement:StopMovementImmediately() end)
+        pcall(function() c.CharacterMovement.Velocity = ZERO end)
+        pcall(function() c.ServerRepVelocity = ZERO end)
+        pcall(function() c.ServerRepLocation = loc end)
+        pcall(function() c.ClientRepLocation = loc end)
+        pcall(function() c:K2_SetActorLocation(loc, false, {}, true) end)
+        pcall(function()
+            local s = c.Sphere
+            if valid(s) then
+                s:K2_SetWorldLocation(loc, false, {}, true)
+                s:SetAllPhysicsLinearVelocity(ZERO, false)
+                s:SetPhysicsLinearVelocity(ZERO, false, FName("None"))
+                s:SetPhysicsAngularVelocityInDegrees(ZERO, false, FName("None"))
+            end
+        end)
     end
-    log("teleport: no method moved the character")
-    return false
+    pin()
+    for i = 1, 12 do
+        ExecuteWithDelay(i * 50, function() ExecuteInGameThread(pin) end)
+    end
+    ExecuteWithDelay(700, function() ExecuteInGameThread(function()
+        if valid(c) then
+            pcall(function() c.ClientRepLocation = c:K2_GetActorLocation() end)
+            pcall(function() c.IsTeleporting = false end)
+        end
+    end) end)
+    local d = dist()
+    if d > 100 then log(string.format("teleport: ended %.0f units away from target", d)); return false end
+    return true
 end
 
 local function restore(snap)
-    for _, s in ipairs(snap) do if valid(s.c) then tpChar(s.c, s.x, s.y, s.z, s.yaw) end end
+    for _, s in ipairs(snap) do if valid(s.c) then tpChar(s.c, s.x, s.y, s.z + TP_LIFT, s.yaw) end end
 end
 
+-- whole team to one spot: stacked straight up above it (no sideways spread into walls)
 local function tpTeamTo(team, x, y, zz, yaw)
     local i = 0
     for _, c in ipairs(chars()) do
         if (not isRace()) or teamOf(c) == team then
-            tpChar(c, x + i * 90, y, zz + 50, yaw); i = i + 1
+            tpChar(c, x, y, zz + TP_LIFT + i * 110, yaw); i = i + 1
         end
     end
 end
-
 -- skips file: name x y z yaw
 local function loadSkips()
     state.skips = {}
@@ -446,6 +531,91 @@ local function onCommand(pc, msg)
             log(string.format("PC%d local=%s pawn=%s", i, tostring(okl and l), g(p, "Pawn")))
         end
         local gi = GI(); if gi then log("GI PlayersInSession=" .. g(gi, "PlayersInSession")) end
+    elseif cmd == "tptrace" and CT.devBots and me then
+        -- DEV: teleport, then log position + a few movement fields every 100 ms for 3 s
+        local x, y, zz = arg:match("(%-?[%d%.]+)%s+(%-?[%d%.]+)%s+(%-?[%d%.]+)")
+        x, y, zz = tonumber(x), tonumber(y), tonumber(zz)
+        tpChar(me, x, y, zz, 0)
+        for i = 1, 30 do
+            ExecuteWithDelay(i * 100, function() ExecuteInGameThread(function()
+                if not valid(me) then return end
+                local l = me:K2_GetActorLocation()
+                local function g(k) local ok, v = pcall(function() return me[k] end); if ok and type(v) == "userdata" then local ok2, s = pcall(function() return string.format("(%.0f,%.0f,%.0f)", v.X, v.Y, v.Z) end); return ok2 and s or "?" end; return tostring(ok and v) end
+                local mode = "?"; pcall(function() mode = tostring(me.CharacterMovement.MovementMode) end)
+                local sp = "?"; pcall(function() local s = me.Sphere:K2_GetComponentLocation(); sp = string.format("(%.0f,%.0f,%.0f)", s.X, s.Y, s.Z) end)
+                log(string.format("trace %2d actor=(%.0f,%.0f,%.0f) d=%.0f mode=%s sphere=%s clientRep=%s serverRep=%s tele=%s",
+                    i, l.X, l.Y, l.Z, math.sqrt((l.X - x) ^ 2 + (l.Y - y) ^ 2 + (l.Z - zz) ^ 2), mode, sp, g("ClientRepLocation"), g("ServerRepLocation"), g("IsTeleporting")))
+            end) end)
+        end
+    elseif cmd == "widgets" and CT.devBots then
+        -- DEV: list visible user widgets and the widget tree of anything that looks like a pause menu
+        for _, wdg in ipairs(FindAllOf("UserWidget") or {}) do
+            local okv, vis = pcall(function() return wdg:IsInViewport() end)
+            if okv and vis then
+                local cn = wdg:GetClass():GetFName():ToString()
+                log("widget in viewport: " .. cn .. "  " .. wdg:GetFullName())
+                if cn:lower():find("pause") or cn:lower():find("menu") or cn:lower():find("escape") then
+                    pcall(function()
+                        wdg:GetClass():ForEachProperty(function(p)
+                            local n = p:GetFName():ToString()
+                            local okw, v = pcall(function() return wdg[n] end)
+                            if okw and type(v) == "userdata" then
+                                local okc, c2 = pcall(function() return v:GetClass():GetFName():ToString() end)
+                                if okc then log("   " .. n .. " : " .. c2) end
+                            end
+                        end)
+                    end)
+                end
+            end
+        end
+    elseif cmd == "wtree" and CT.devBots then
+        -- DEV: dump the widget tree of a widget class: !wtree W_SettingsMain_C
+        local target = FindFirstOf(arg ~= "" and arg or "W_SettingsMain_C")
+        if not valid(target) then log("wtree: not found"); return end
+        local lines = {}
+        local function walk(wd, depth)
+            if not valid(wd) or depth > 12 then return end
+            local cn = wd:GetClass():GetFName():ToString()
+            local nm = wd:GetFName():ToString()
+            local txt = ""
+            pcall(function() txt = " '" .. wd:GetText():ToString() .. "'" end)
+            local vis = ""; pcall(function() vis = " vis=" .. tostring(wd:GetVisibility()) end)
+            lines[#lines + 1] = string.rep("  ", depth) .. cn .. " " .. nm .. txt .. vis
+            local okc, n = pcall(function() return wd:GetChildrenCount() end)
+            if okc and n then
+                for i = 0, n - 1 do local okg, ch = pcall(function() return wd:GetChildAt(i) end); if okg then walk(ch, depth + 1) end end
+            end
+            pcall(function() local inner = wd.WidgetTree.RootWidget; if valid(inner) and inner ~= wd then walk(inner, depth + 1) end end)
+            pcall(function() local c0 = wd:GetContent(); if valid(c0) then walk(c0, depth + 1) end end)
+        end
+        pcall(function() walk(target.WidgetTree.RootWidget, 0) end)
+        local f = io.open(DATA_DIR .. "wtree.txt", "w"); if f then f:write(table.concat(lines, "\n")); f:close() end
+        log("wtree: " .. #lines .. " widgets -> wtree.txt")
+    elseif cmd == "funcs" and CT.devBots then
+        -- DEV: !funcs /V_WidgetEssentials/Widgets/W_Button.W_Button_C  -> functions + props to funcs.txt (append)
+        local cls = StaticFindObject(arg)
+        local lines = { "== " .. arg .. " valid=" .. tostring(valid(cls)) }
+        if valid(cls) then
+            pcall(function()
+                cls:ForEachFunction(function(fn)
+                    local ps = {}
+                    pcall(function() fn:ForEachProperty(function(p) local n = p:GetFName():ToString(); if not n:find("^CallFunc_") and not n:find("^K2Node_") and not n:find("^Temp_") then ps[#ps + 1] = n end end) end)
+                    lines[#lines + 1] = "  fn " .. fn:GetFName():ToString() .. "(" .. table.concat(ps, ", ") .. ")"
+                end)
+                cls:ForEachProperty(function(p) lines[#lines + 1] = "  prop " .. p:GetFName():ToString() .. " : " .. p:GetClass():GetFName():ToString() end)
+            end)
+        end
+        local f = io.open(DATA_DIR .. "funcs.txt", "a"); if f then f:write(table.concat(lines, "\n") .. "\n"); f:close() end
+        log("funcs: " .. #lines)
+    elseif cmd == "fxinfo" and CT.devBots and me then
+        local function g(f) local ok, v = pcall(f); return ok and tostring(v) or "err" end
+        log("fxinfo scale=" .. g(function() local s = me:GetActorScale3D(); return string.format("%.2f", s.X) end)
+            .. " meshScale=" .. g(function() local s = me.Mesh:K2_GetComponentScale(); return string.format("%.2f", s.X) end)
+            .. " capsuleHalf=" .. g(function() return me.CapsuleComponent:GetScaledCapsuleHalfHeight() end)
+            .. " grav=" .. g(function() return me.GravityForce end)
+            .. " jump=" .. g(function() return me.JumpForce end)
+            .. " walk=" .. g(function() return me.MaxWalkSpeed end)
+            .. " damping=" .. g(function() return me.Sphere:GetLinearDamping() end))
     elseif cmd == "who" then
         for _, c in ipairs(chars()) do
             local l = c:K2_GetActorLocation()
@@ -538,7 +708,7 @@ end)
 
 -- ---------- section triggers ----------
 pcall(function()
-    RegisterHook("/Game/Blueprint/BiomeText/BiomeText_BP.BiomeText_BP_C:BndEvt__BiomeText_BP_Box_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+    CT.hookLater("/Game/Blueprint/BiomeText/BiomeText_BP.BiomeText_BP_C:BndEvt__BiomeText_BP_Box_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
         function(ctx, overlapped, other)
             local biome = ctx:get(); local o = other:get()
             ExecuteInGameThread(function() onBiome(biome, o) end)
@@ -547,7 +717,7 @@ end)
 
 -- race countdown finished -> start the clock
 pcall(function()
-    RegisterHook("/Game/Blueprint/Gameplay/GS_Game.GS_Game_C:CheckCountdownOver", function()
+    CT.hookLater("/Game/Blueprint/Gameplay/GS_Game.GS_Game_C:CheckCountdownOver", function()
         if state.enabled and isHost() and not state.raceStart then startClock("race countdown") end
     end)
 end)
@@ -589,7 +759,7 @@ end)
 -- ("No playerstart found" -> no character). Post-hook: when it fails, hand back a transform beside the start.
 CT.extraSpawns = 0
 pcall(function()
-    RegisterHook("/Game/Blueprint/Gameplay/GS_Game.GS_Game_C:FindPlayerStart", function() end,
+    CT.hookLater("/Game/Blueprint/Gameplay/GS_Game.GS_Game_C:FindPlayerStart", function() end,
         function(ctx, transformP, retP)
             if not state.enabled then return end
             CT.startCalls = (CT.startCalls or 0) + 1
@@ -614,7 +784,7 @@ pcall(function()
 end)
 
 pcall(function()
-    RegisterHook("/Game/Blueprint/Gameplay/GS_Game.GS_Game_C:ReceiveBeginPlay", function()
+    CT.hookLater("/Game/Blueprint/Gameplay/GS_Game.GS_Game_C:ReceiveBeginPlay", function()
         CT.startCalls = 0; CT.extraSpawns = 0; CT.sections = nil; CT.spawnFixDone = false; resetRace()
     end)
 end)
@@ -705,18 +875,21 @@ CT.balanceTeams = balanceTeams
 
 -- ---------- fun controls, pushing, outfits, side panel (fun.lua) ----------
 do
-    local okf, funSetup = pcall(require, "fun")
-    if okf and type(funSetup) == "function" then
-        local okr, err = pcall(funSetup, {
+    local API = {
             CT = CT, state = state, TEAM_NAME = TEAM_NAME, DATA_DIR = DATA_DIR, TAG = TAG,
             log = log, valid = valid, GS = GS, GI = GI, now = now, fmt = fmt, isHost = isHost, say = say,
             chars = chars, teamOf = teamOf, z = z, pct = pct, isRace = isRace,
             tpChar = tpChar, tpTeamTo = tpTeamTo, saveSkips = saveSkips,
             onCommand = onCommand, balanceTeams = balanceTeams,
-        })
-        if not okr then log("fun.lua failed: " .. tostring(err)) end
-    else
-        log("fun.lua not loaded: " .. tostring(funSetup))
+    }
+    for _, modName in ipairs({ "fun", "menu" }) do
+        local okf, setup = pcall(require, modName)
+        if okf and type(setup) == "function" then
+            local okr, err = pcall(setup, API)
+            if not okr then log(modName .. ".lua failed: " .. tostring(err)) end
+        else
+            log(modName .. ".lua not loaded: " .. tostring(setup))
+        end
     end
 end
 

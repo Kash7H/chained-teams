@@ -22,16 +22,19 @@ return function(A)
     local function cmc(c) local ok, m = pcall(function() return c.CharacterMovement end); if ok and valid(m) then return m end end
     local function key(c) local ok, k = pcall(function() return c:GetFullName() end); return ok and k or tostring(c) end
 
+    -- This game moves characters with its own physics code (no CharacterMovementComponent):
+    -- BP_Character has GravityForce, JumpForce, MaxWalkSpeed, MaxFallSpeed and a physics "Sphere".
+    local function num(c, k) local ok, v = pcall(function() return c[k] end); if ok and type(v) == "number" then return v end end
     local function baseOf(c)
         local k = key(c)
         if base[k] then return base[k] end
-        local m = cmc(c); if not m then return nil end
         local b = {}
-        pcall(function() b.g = m.GravityScale end)
-        pcall(function() b.j = m.JumpZVelocity end)
-        pcall(function() b.f = m.GroundFriction end)
-        pcall(function() b.br = m.BrakingDecelerationWalking end)
-        pcall(function() b.acc = m.MaxAcceleration end)
+        b.g = num(c, "GravityForce")
+        b.j = num(c, "JumpForce")
+        b.w = num(c, "MaxWalkSpeed")
+        b.fall = num(c, "MaxFallSpeed")
+        pcall(function() b.ld = c.Sphere:GetLinearDamping() end)
+        if not (b.g or b.j or b.w) then return nil end
         -- chain length: any numeric max-distance style property on the character (best effort)
         b.chainProps = {}
         pcall(function()
@@ -54,20 +57,17 @@ return function(A)
     end
 
     local function applyTo(c)
-        local m = cmc(c); if not m then return end
         local b = baseOf(c); if not b then return end
-        if b.g then pcall(function() m.GravityScale = b.g * fx.gravity end) end
-        if b.j then pcall(function() m.JumpZVelocity = b.j * fx.jump end) end
-        pcall(function() c.CustomTimeDilation = fx.speed end)
-        pcall(function() c:SetActorScale3D({ X = fx.scale, Y = fx.scale, Z = fx.scale }) end)
-        if fx.ice then
-            pcall(function() m.GroundFriction = 0.05 end)
-            pcall(function() m.BrakingDecelerationWalking = 40 end)
-            pcall(function() m.MaxAcceleration = (b.acc or 1500) * 0.35 end)
-        else
-            if b.f then pcall(function() m.GroundFriction = b.f end) end
-            if b.br then pcall(function() m.BrakingDecelerationWalking = b.br end) end
-            if b.acc then pcall(function() m.MaxAcceleration = b.acc end) end
+        if b.g then pcall(function() c.GravityForce = b.g * fx.gravity end) end
+        if b.j then pcall(function() c.JumpForce = b.j * fx.jump end) end
+        if b.w then pcall(function() c.MaxWalkSpeed = b.w * fx.speed end) end
+        if b.fall then pcall(function() c.MaxFallSpeed = b.fall * math.max(1, fx.speed) end) end
+        pcall(function()
+            local s = c:GetActorScale3D()
+            if math.abs(s.X - fx.scale) > 0.01 then c:SetActorScale3D({ X = fx.scale, Y = fx.scale, Z = fx.scale }) end
+        end)
+        if b.ld then
+            pcall(function() c.Sphere:SetLinearDamping(fx.ice and 0.0 or b.ld) end)
         end
         for n, v in pairs(b.chainProps or {}) do pcall(function() c[n] = v * fx.chain end) end
     end
@@ -104,7 +104,17 @@ return function(A)
 
     -- ---------- announcing settings (so launcher players mirror them) ----------
     local function fmtx(v) return string.format("%.2f", v):gsub("0+$", ""):gsub("%.$", "") end
-    local function announce()
+    -- debounced: sliders send many changes; post one chat line 1 s after the last change
+    local announceAt = nil
+    LoopAsync(250, function()
+        if announceAt and os.clock() >= announceAt then
+            announceAt = nil
+            ExecuteInGameThread(function() if CT.announceNow then CT.announceNow() end end)
+        end
+        return false
+    end)
+    local function announce() announceAt = os.clock() + 1.0 end
+    function CT.announceNow()
         say(string.format("Fun settings: gravity %sx, speed %sx, jump %sx, size %sx, chain %sx, ice %s, pushing %s, chaos %s",
             fmtx(fx.gravity), fmtx(fx.speed), fmtx(fx.jump), fmtx(fx.scale), fmtx(fx.chain),
             fx.ice and "on" or "off", fx.push and "on" or "off", fx.chaos and "on" or "off"))
@@ -140,14 +150,18 @@ return function(A)
     end)
 
     -- ---------- flinging ----------
+    -- no CharacterMovementComponent here: throw the physics sphere that drives the character
     local function launch(c, x, y, zz)
-        pcall(function() c:LaunchCharacter({ X = x, Y = y, Z = zz }, true, true) end)
+        local v = { X = x, Y = y, Z = zz }
+        pcall(function() c.ServerRepVelocity = v end)
+        pcall(function() c.Sphere:SetPhysicsLinearVelocity(v, true, FName("None")) end)
+        pcall(function() c.Sphere:AddImpulse(v, FName("None"), true) end)
     end
     local function fling(filterTeam)
         local n = 0
         for _, c in ipairs(chars()) do
             if filterTeam == nil or teamOf(c) == filterTeam then
-                launch(c, math.random(-600, 600), math.random(-600, 600), 1800); n = n + 1
+                launch(c, math.random(-1500, 1500), math.random(-1500, 1500), 5000); n = n + 1
             end
         end
         return n
@@ -190,7 +204,7 @@ return function(A)
                                     if dot > 0.3 and (pushCooldown[kb] or 0) < t then
                                         pushCooldown[kb] = t + 1.2
                                         local nx, ny = dx / math.max(1, d), dy / math.max(1, d)
-                                        launch(b, nx * 1100, ny * 1100, 380)
+                                        launch(b, nx * 3000, ny * 3000, 1200)
                                     end
                                 end
                             end
@@ -242,11 +256,16 @@ return function(A)
     local function rowCount(path)
         local dt = StaticFindObject(path)
         if not valid(dt) then return 0 end
-        local lib = StaticFindObject("/Script/Engine.Default__DataTableFunctionLibrary")
-        local out = {}
-        local ok = pcall(function() lib:GetDataTableRowNames(dt, out) end)
         local n = 0
-        if ok and out.OutRowNames then pcall(function() n = out.OutRowNames:GetArrayNum() end) end
+        pcall(function() dt:ForEachRow(function() n = n + 1 end) end)
+        if n == 0 then
+            local lib = StaticFindObject("/Script/Engine.Default__DataTableFunctionLibrary")
+            local out = {}
+            pcall(function() lib:GetDataTableRowNames(dt, out) end)
+            for _, k in ipairs({ "OutRowNames", "RowNames", 1 }) do
+                pcall(function() if n == 0 and out[k] then n = out[k]:GetArrayNum() end end)
+            end
+        end
         return n
     end
     local function randomOutfit(ps)
@@ -321,7 +340,7 @@ return function(A)
             local s = state.skips[skip]
             local pc = pcByName(name)
             local p; if pc then pcall(function() p = pc.Pawn end) end
-            if s and valid(p) then A.tpChar(p, s.x, s.y, s.z + 50, s.yaw); say(name .. " teleported to " .. skip)
+            if s and valid(p) then A.tpChar(p, s.x, s.y, s.z + 60, s.yaw); say(name .. " teleported to " .. skip)
             else say("cannot teleport " .. name .. " to " .. skip) end
         elseif cmd == "delmark" and w[2] then
             state.skips[w[2]] = nil; A.saveSkips(); say("deleted spot " .. w[2])
