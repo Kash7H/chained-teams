@@ -42,6 +42,9 @@ Copy-Item (Join-Path $root "docs\FRIEND_GUIDE.md") (Join-Path $stage "HOW TO PLA
 Copy-Item (Join-Path $root "docs\HOST_GUIDE.md") (Join-Path $stage "HOST GUIDE.md")
 Copy-Item $ue4ss $stage -Recurse
 Get-ChildItem $stage -Recurse -Filter *.log | Remove-Item -Force
+# ship an empty data folder (no local test spots or dev files)
+$sd = Join-Path $stage "ue4ss\Mods\ChainedTeams\data"
+if (Test-Path $sd) { Get-ChildItem $sd -File | Remove-Item -Force }
 Set-Content -Path (Join-Path $stage "version.txt") -Value $ver -NoNewline -Encoding ASCII
 $out = Join-Path $root "release"; New-Item -ItemType Directory -Force $out | Out-Null
 $zipOut = Join-Path $out "ChainedTeams-v$ver.zip"
