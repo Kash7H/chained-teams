@@ -129,6 +129,43 @@ return function(A)
         add(page, newButton(menu, "Quick load position", function() run("load") end))
         add(page, newButton(menu, "Go to the top", function() run("top") end))
 
+        -- Achievements: only when the personal achievement mod (ChainedPersonal) is installed next to this one.
+        -- Separate mod = separate Lua state, so talk through its files: read achievements.txt, write command.txt.
+        local personalDir = A.DATA_DIR .. "../../ChainedPersonal/"
+        local af = io.open(personalDir .. "achievements.txt", "r")
+        if af then
+            add(page, newHeader(menu, "Achievements"), 20)
+            local locked = 0
+            for line in af:lines() do
+                local n, mark, name = line:match("^%s*(%d+)%s+%[(.)%]%s+%S+%s+(.-)%s+%-%s")
+                if n and mark ~= "x" then
+                    locked = locked + 1
+                    add(page, newButton(menu, "Unlock: " .. name, function()
+                        local cf = io.open(personalDir .. "command.txt", "a")
+                        if cf then cf:write("ach " .. n .. "\n"); cf:close() end
+                        say("unlocking: " .. name)
+                        ExecuteWithDelay(2500, function() ExecuteInGameThread(function() if current then fill(current.menu, current.page) end end) end)
+                    end))
+                end
+            end
+            af:close()
+            if locked == 0 then
+                add(page, newHeader(menu, "   (all achievements unlocked)"))
+            else
+                add(page, newButton(menu, "Unlock all achievements", function()
+                    local cf = io.open(personalDir .. "command.txt", "a")
+                    if cf then cf:write("ach all\n"); cf:close() end
+                    say("unlocking all achievements")
+                    ExecuteWithDelay(3000, function() ExecuteInGameThread(function() if current then fill(current.menu, current.page) end end) end)
+                end))
+            end
+            add(page, newButton(menu, "Collect all 10 wings", function()
+                local cf = io.open(personalDir .. "command.txt", "a")
+                if cf then cf:write("wings\n"); cf:close() end
+                say("collecting all 10 wings")
+            end))
+        end
+
         if isHost() then
             add(page, newHeader(menu, "Fun"), 20)
             -- click-to-cycle buttons (the game's own slider widget ignores the mouse when created at runtime)
@@ -177,6 +214,8 @@ return function(A)
             end))
 
             add(page, newHeader(menu, "Race"), 20)
+            add(page, newButton(menu, "Join Red", function() run("team red") end))
+            add(page, newButton(menu, "Join Blue", function() run("team blue") end))
             add(page, newButton(menu, "Balance teams", function() run("balance") end))
             add(page, newButton(menu, "Start clock", function() run("start") end))
             add(page, newButton(menu, "Reset clock", function() run("reset") end))

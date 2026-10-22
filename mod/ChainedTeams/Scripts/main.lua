@@ -3,7 +3,7 @@
 -- Everything here runs on the HOST; clients can stay vanilla (they see results through the game's own chat).
 
 local CT = { devBots = false,  -- set true for solo bot testing (!bots, !play, devcmd_run.txt)
-    debug = false, VERSION = "0.5.0", SUPPORTED_GAME = { ["1.10.19"] = true } }
+    debug = false, VERSION = "0.5.1", SUPPORTED_GAME = { ["1.10.19"] = true } }
 local MAX_PLAYERS = 6
 local TAG = "Chained Teams"
 -- data folder next to Scripts/, derived from this file's path (works for proxy installs and launcher injection)
@@ -69,7 +69,17 @@ local function fmt(t)
     if m >= 60 then return string.format("%d:%02d:%04.1f", math.floor(m / 60), m % 60, s) end
     return string.format("%d:%04.1f", m, s)
 end
+-- "host" = this game runs the session: hosting online OR playing solo / training / local.
+-- Only a client that joined someone else's game is not the host.
 local function isHost()
+    local gs = FindFirstOf("GS_Game_C")
+    if valid(gs) then
+        local ok, auth = pcall(function() return gs:HasAuthority() end)
+        if ok and auth ~= nil then return auth == true end
+        local ksl = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+        local ok2, srv = pcall(function() return ksl:IsServer(gs) end)
+        if ok2 and srv ~= nil then return srv == true end
+    end
     local gi = GI(); if not gi then return false end
     local ok, v = pcall(function() return gi.HostingOnlineSession end)
     return ok and v
