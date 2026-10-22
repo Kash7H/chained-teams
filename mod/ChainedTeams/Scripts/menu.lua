@@ -119,11 +119,11 @@ return function(A)
             local i = 1
             while (state.skips or {})["spot" .. i] do i = i + 1 end
             run("mark spot" .. i)
-            ExecuteWithDelay(300, function() ExecuteInGameThread(function() if current then fill(current.menu, current.page) end end) end)
+            ExecuteWithDelay(300, function() ExecuteInGameThread(function() if current and valid(current.menu) and valid(current.page) then fill(current.menu, current.page) end end) end)
         end), 12)
         add(page, newButton(menu, "Delete last spot", function()
             if #names > 0 then run("delmark " .. names[#names]) end
-            ExecuteWithDelay(300, function() ExecuteInGameThread(function() if current then fill(current.menu, current.page) end end) end)
+            ExecuteWithDelay(300, function() ExecuteInGameThread(function() if current and valid(current.menu) and valid(current.page) then fill(current.menu, current.page) end end) end)
         end))
         add(page, newButton(menu, "Quick save position", function() run("save") end), 12)
         add(page, newButton(menu, "Quick load position", function() run("load") end))
@@ -144,7 +144,7 @@ return function(A)
                         local cf = io.open(personalDir .. "command.txt", "a")
                         if cf then cf:write("ach " .. n .. "\n"); cf:close() end
                         say("unlocking: " .. name)
-                        ExecuteWithDelay(2500, function() ExecuteInGameThread(function() if current then fill(current.menu, current.page) end end) end)
+                        ExecuteWithDelay(2500, function() ExecuteInGameThread(function() if current and valid(current.menu) and valid(current.page) then fill(current.menu, current.page) end end) end)
                     end))
                 end
             end
@@ -156,7 +156,7 @@ return function(A)
                     local cf = io.open(personalDir .. "command.txt", "a")
                     if cf then cf:write("ach all\n"); cf:close() end
                     say("unlocking all achievements")
-                    ExecuteWithDelay(3000, function() ExecuteInGameThread(function() if current then fill(current.menu, current.page) end end) end)
+                    ExecuteWithDelay(3000, function() ExecuteInGameThread(function() if current and valid(current.menu) and valid(current.page) then fill(current.menu, current.page) end end) end)
                 end))
             end
             add(page, newButton(menu, "Collect all 10 wings", function()
@@ -210,7 +210,7 @@ return function(A)
             add(page, newButton(menu, "Random outfits for everyone", function() run("outfit randomall") end))
             add(page, newButton(menu, "Reset all fun settings", function()
                 run("resetfun")
-                ExecuteWithDelay(200, function() ExecuteInGameThread(function() if current then fill(current.menu, current.page) end end) end)
+                ExecuteWithDelay(200, function() ExecuteInGameThread(function() if current and valid(current.menu) and valid(current.page) then fill(current.menu, current.page) end end) end)
             end))
 
             add(page, newHeader(menu, "Race"), 20)
@@ -248,6 +248,8 @@ return function(A)
     local function buildInto(menu)
         local key = fname(menu)
         if built[key] then return end
+        -- the game makes a new Esc menu each time; forget the old ones so delayed refreshes never touch them
+        built = {}; current = nil; actions = {}; sliders = {}
         local tab = menu.DevTab
         if not valid(tab) then return end
         pcall(function() tab.Text = FText("Mods") end)

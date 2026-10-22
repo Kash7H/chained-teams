@@ -19,7 +19,20 @@ return function(A)
     local chaosSaved = nil
 
     -- ---------- applying settings to characters ----------
-    local function cmc(c) local ok, m = pcall(function() return c.CharacterMovement end); if ok and valid(m) then return m end end
+    -- Safety: calling a function on a missing component (e.g. while the game respawns a character)
+    -- crashes the whole game instead of raising a Lua error, so check everything before touching it.
+    local function alive(c)
+        if not valid(c) then return false end
+        local ok, dying = pcall(function() return c:IsActorBeingDestroyed() end)
+        return not (ok and dying)
+    end
+    local function sphereOf(c)
+        if not alive(c) then return nil end
+        local ok, s = pcall(function() return c.Sphere end)
+        if ok and s ~= nil and s:IsValid() then return s end
+        return nil
+    end
+    A.alive, A.sphereOf = alive, sphereOf
     local function key(c) local ok, k = pcall(function() return c:GetFullName() end); return ok and k or tostring(c) end
 
     -- This game moves characters with its own physics code (no CharacterMovementComponent):
@@ -33,7 +46,8 @@ return function(A)
         b.j = num(c, "JumpForce")
         b.w = num(c, "MaxWalkSpeed")
         b.fall = num(c, "MaxFallSpeed")
-        pcall(function() b.ld = c.Sphere:GetLinearDamping() end)
+        local s = sphereOf(c)
+        if s then pcall(function() b.ld = s:GetLinearDamping() end) end
         if not (b.g or b.j or b.w) then return nil end
         -- chain length: any numeric max-distance style property on the character (best effort)
         b.chainProps = {}
@@ -56,20 +70,27 @@ return function(A)
         return b
     end
 
+    -- write a number property only when it differs (fewer calls into the game)
+    local function setNum(c, k, v)
+        local cur = num(c, k)
+        if cur ~= nil and math.abs(cur - v) > 0.001 then pcall(function() c[k] = v end) end
+    end
+
     local function applyTo(c)
+        if not alive(c) then return end
         local b = baseOf(c); if not b then return end
-        if b.g then pcall(function() c.GravityForce = b.g * fx.gravity end) end
-        if b.j then pcall(function() c.JumpForce = b.j * fx.jump end) end
-        if b.w then pcall(function() c.MaxWalkSpeed = b.w * fx.speed end) end
-        if b.fall then pcall(function() c.MaxFallSpeed = b.fall * math.max(1, fx.speed) end) end
-        pcall(function()
-            local s = c:GetActorScale3D()
-            if math.abs(s.X - fx.scale) > 0.01 then c:SetActorScale3D({ X = fx.scale, Y = fx.scale, Z = fx.scale }) end
-        end)
-        if b.ld then
-            pcall(function() c.Sphere:SetLinearDamping(fx.ice and 0.0 or b.ld) end)
+        if b.g then setNum(c, "GravityForce", b.g * fx.gravity) end
+        if b.j then setNum(c, "JumpForce", b.j * fx.jump) end
+        if b.w then setNum(c, "MaxWalkSpeed", b.w * fx.speed) end
+        if b.fall then setNum(c, "MaxFallSpeed", b.fall * math.max(1, fx.speed)) end
+        if b.scaleApplied ~= fx.scale then
+            pcall(function() c:SetActorScale3D({ X = fx.scale, Y = fx.scale, Z = fx.scale }) end)
+            b.scaleApplied = fx.scale
         end
-        for n, v in pairs(b.chainProps or {}) do pcall(function() c[n] = v * fx.chain end) end
+        if b.ld and b.iceApplied ~= fx.ice then
+            local s = sphereOf(c)
+            if s then pcall(function() s:SetLinearDamping(fx.ice and 0.0 or b.ld) end); b.iceApplied = fx.ice end
+        end
     end
 
     local function myPawn()
@@ -87,7 +108,7 @@ return function(A)
     -- Host applies to everyone; a client (launcher, not host) applies to its own character only.
     -- ALS rewrites some movement values every frame, so re-apply often while anything is changed.
     local wasDefault = true
-    LoopAsync(150, function()
+    LoopAsync(300, function()
         if state.enabled == false then return false end
         ExecuteInGameThread(function()
             local def = isDefault()
@@ -152,10 +173,11 @@ return function(A)
     -- ---------- flinging ----------
     -- no CharacterMovementComponent here: throw the physics sphere that drives the character
     local function launch(c, x, y, zz)
+        local s = sphereOf(c); if not s then return end
         local v = { X = x, Y = y, Z = zz }
         pcall(function() c.ServerRepVelocity = v end)
-        pcall(function() c.Sphere:SetPhysicsLinearVelocity(v, true, FName("None")) end)
-        pcall(function() c.Sphere:AddImpulse(v, FName("None"), true) end)
+        pcall(function() s:SetPhysicsLinearVelocity(v, true, FName("None")) end)
+        pcall(function() s:AddImpulse(v, FName("None"), true) end)
     end
     local function fling(filterTeam)
         local n = 0
@@ -185,7 +207,8 @@ return function(A)
         if not fx.push or state.enabled == false then return false end
         ExecuteInGameThread(function()
             if not isHost() then return end
-            local list = chars()
+            local list = {}
+            for _, c in ipairs(chars()) do if alive(c) then list[#list + 1] = c end end
             local t = os.clock()
             for _, a in ipairs(list) do
                 local va = vel(a)
@@ -400,7 +423,9 @@ return function(A)
             parts[#parts + 1] = '"raceTime":' .. js(state.raceStart and A.fmt(A.now() - state.raceStart) or "--:--")
             local pl = {}
             for _, pc in ipairs(FindAllOf("PC_Game_C") or {}) do
-                local name = "?"; pcall(function() name = pc.PlayerState:GetPlayerName():ToString() end)
+                local name = "?"
+                local psv; pcall(function() psv = pc.PlayerState end)
+                if psv ~= nil and psv:IsValid() then pcall(function() name = psv:GetPlayerName():ToString() end) end
                 local p; pcall(function() p = pc.Pawn end)
                 local team, zz = "?", 0
                 local okc = valid(p) and p:GetClass():GetFName():ToString():find("Character")

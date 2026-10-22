@@ -3,7 +3,7 @@
 -- Everything here runs on the HOST; clients can stay vanilla (they see results through the game's own chat).
 
 local CT = { devBots = false,  -- set true for solo bot testing (!bots, !play, devcmd_run.txt)
-    debug = false, VERSION = "0.5.1", SUPPORTED_GAME = { ["1.10.19"] = true } }
+    debug = false, VERSION = "0.5.2", SUPPORTED_GAME = { ["1.10.19"] = true } }
 local MAX_PLAYERS = 6
 local TAG = "Chained Teams"
 -- data folder next to Scripts/, derived from this file's path (works for proxy installs and launcher injection)
@@ -309,7 +309,6 @@ local function tpChar(c, x, y, zz, yaw)
     -- (ClientRepLocation/ServerRepLocation) and has a physics sphere + chain links, so move all of them.
     local ZERO = { X = 0, Y = 0, Z = 0 }
     pcall(function() c.IsTeleporting = true end)
-    pcall(function() c.CharacterMovement:StopMovementImmediately() end)
     pcall(function() c:K2_SetActorLocation(loc, false, {}, true) end)
     pcall(function() c:K2_SetActorRotation(rot, true) end)
     pcall(function() c.ClientRepLocation = loc end)
@@ -340,13 +339,10 @@ local function tpChar(c, x, y, zz, yaw)
             end)
         end
     end)
-    pcall(function() c.CharacterMovement.Velocity = ZERO end)
     -- The character is physics driven and keeps its old momentum (it slid ~14 m after a teleport).
     -- Pin it to the target for 0.6 s: re-place it and zero every velocity each 50 ms.
     local function pin()
         if not valid(c) then return end
-        pcall(function() c.CharacterMovement:StopMovementImmediately() end)
-        pcall(function() c.CharacterMovement.Velocity = ZERO end)
         pcall(function() c.ServerRepVelocity = ZERO end)
         pcall(function() c.ServerRepLocation = loc end)
         pcall(function() c.ClientRepLocation = loc end)
