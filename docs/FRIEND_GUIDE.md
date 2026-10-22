@@ -1,8 +1,14 @@
-﻿# Chained Teams: How to Play
+# Chained Teams: How to Play
 
 1. Unzip this folder anywhere.
 2. Double-click `ChainedTeams.exe` and wait for the game to open.
 3. Join your friend's lobby as usual.
+
+## Mods menu
+
+Press **Esc** and click the **Mods** tab to pick a team, spectate, or teleport to saved spots.
+
+The mod updates itself when you start `ChainedTeams.exe`.
 
 ## Commands
 

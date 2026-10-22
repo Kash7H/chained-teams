@@ -31,6 +31,8 @@ static class ChainedTeams
 
             Console.WriteLine("Starting Chained Together with Chained Teams mod...");
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            if (!checkOnly && Array.IndexOf(args, "--no-update") < 0) Updater.Run(baseDir);
+            if (Array.IndexOf(args, "--update-only") >= 0) return 0;
             string dll = Path.Combine(baseDir, "ue4ss\\UE4SS.dll");
             if (!File.Exists(dll))
                 return Fail("The mod files are missing. Please unzip the WHOLE folder (keep the 'ue4ss' folder next to ChainedTeams.exe) and try again.");
